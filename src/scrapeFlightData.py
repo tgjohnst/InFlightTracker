@@ -167,6 +167,7 @@ def fetch_data(url: str, headers: dict, timeout: int, max_retries: int) -> dict:
     # check response
     if response.status_code != 200:
         raise ValueError(f'Invalid response code: {response.status_code}')
+    #TODO implement ignoring failures (would skip writing out data)
     # parse response
     data = response.json()
     session.close()
