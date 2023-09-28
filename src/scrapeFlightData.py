@@ -121,11 +121,8 @@ def write_raw_data(flight_dir: str, data: dict, data_format: str) -> None:
         with open(os.path.join(flight_dir, 'raw', f'{datetime.now().strftime("%Y%m%d-%H%M%S")}.json'), 'w') as f:
             json.dump(data, f)
     elif data_format == 'csv':
-        logging.debug(f'Writing raw data to {flight_dir}/raw/{datetime.now().strftime("%Y%m%d-%H%M%S")}.csv')
-        with open(os.path.join(flight_dir, 'raw', f'{datetime.now().strftime("%Y%m%d-%H%M%S")}.csv'), 'w') as f:
-            writer = csv.writer(f)
-            writer.writerow(data.keys())
-            writer.writerow(data.values())
+        logging.warn("CSV parsing is not yet implemented. raw data will not be written")
+        print("CSV parsing is not yet implemented. raw data will not be written!")
     else:
         raise ValueError(f'Invalid data format: {data_format}')
 
