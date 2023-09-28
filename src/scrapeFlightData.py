@@ -172,6 +172,22 @@ def fetch_data(url: str, headers: dict, timeout: int, max_retries: int) -> dict:
     session.close()
     return data
     
+def fetch_and_store_data(flight_dir: str, store_raw: bool, data_format: str, db: sqlite3.Connection, timeout: int, max_retries: int) -> None:
+    """ Fetch data from the API and store it
+    Arguments:
+        flight_dir: Path to the flight directory
+        store_raw: Store raw data from API in addition to processed data
+        data_format: Format to store raw flight data in
+        timeout: API request timeout
+        max_retries: Maximum number of retries for API requests
+    """
+    # Fetch data
+    data = fetch_data(API_URL, API_HEADERS, timeout, max_retries)
+    # Store raw data
+    if store_raw:
+        write_raw_data(flight_dir, data, data_format)
+    # Store processed data in db
+    write_to_db(db, data)
 
 # ------------------- #
 # Data handling
@@ -251,6 +267,16 @@ def main() -> None:
     log.info(f'Starting main fetch loop...')
     print(f"Requesting new data every {args.scrape_interval} seconds...")
     print(f"Press Ctrl+C to exit")
+
+    # Approach 1: schedule
+    schedule.every(args.scrape_interval).seconds.do(
+        fetch_and_store_data,
+        flight_dir=flight_dir,
+        store_raw=args.store_raw,
+        data_format=args.data_format,
+        db=db,
+        timeout=args.scrape_timeout,
+        max_retries=args.scrape_max_retries)
     try:
         while True:
             schedule.run_pending()
