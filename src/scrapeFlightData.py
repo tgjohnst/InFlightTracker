@@ -6,8 +6,8 @@ import csv
 import logging
 
 import requests
+from requests.adapters import HTTPAdapter, Retry
 import schedule # approach 1
-import backoff # approach 2
 import sqlite3
 
 from datetime import datetime
@@ -35,7 +35,7 @@ def parse_cmd(args: list):
     # Scraping Configuration
     parser.add_argument('--scrape-interval', '-i', type=int, default=30, help='Interval (in seconds) between scraping attempts')
     parser.add_argument('--scrape-timeout', '-t', type=int, default=5, help='Timeout (in seconds) for scraping requests')
-    parser.add_argument('--scrape-max-retries', '-r', type=int, default=10, help='Maximum number of retries for scraping requests before quitting')
+    parser.add_argument('--scrape-max-retries', '-r', type=int, default=3, help='Maximum number of retries for scraping requests before quitting')
 
     # Storage Configuration
     parser.add_argument('--rebuild-db', '-b', action='store_true', help='Rebuild the database from stored raw data (will delete existing data)')
@@ -67,6 +67,7 @@ def validate_args(args: list) -> None:
         raise ValueError(f'Cannot rebuild database without raw data present')
 
 # ------------------- #
+# Init and logging
 
 def init_log(logfile_dir: str = '.', debug: bool = False, verbose: bool = False) -> None:
     """ Initialize logging
@@ -98,22 +99,12 @@ def log_args(args: list) -> None:
         logging.info(f'{arg}: {getattr(args, arg)}')
     logging.info('-----')
 
-def init_db(flight_dir: str, flight_name: str) -> sqlite3.Connection:
-    """ Initialize database for storing flight data
-    Arguments:
-        data_dir: Top-level directory to store flight data in
-        flight_name: Name of your flight
-    Returns:
-        db: sqlite3 connection object
-    """
-    # Check if db already exists
-    if os.path.isfile(f'{data_dir}/flight-data_{flight_name}.db'):
-        log.info(f'Flight data database already exists, path: {data_dir}/flight-data_{flight_name}.db')
-        log.info('Attempting to resume scraping')
-    else:
-        log.info(f'Flight data database does not exist, creating new database at {data_dir}/flight-data_{flight_name}.db')
-    db = sqlite3.connect(f'{data_dir}/flight-data_{flight_name}.db')
-    return db
+def print_welcome_message() -> None:
+    """ Print welcome message """
+    print(f"Welcome to InFlightTracker version {VERSION}")
+    print("This script will continuously scrape flight data from the in-flight API and store it in a database")
+    # TODO print more info and ascii art
+
 
 def determine_flight_dir(data_dir: str, flight_name: str) -> str:
     """ Returns the path to the flight directory
@@ -145,6 +136,45 @@ def create_flight_dir(data_dir: str, flight_name: str, store_raw: bool) -> str:
         os.mkdir(os.path.join(flight_dir, 'raw'), exist_ok=True)
     return flight_dir
 
+# ------------------- #
+# Fetching
+
+def fetch_data(url: str, headers: dict, timeout: int, max_retries: int) -> dict:
+    """ Fetch data from the API
+    Arguments:
+        url: API URL
+        headers: API headers
+        timeout: API request timeout
+        max_retries: Maximum number of retries for API requests
+    Returns:
+        data: Data from the API
+    """
+    # configure Retry object
+    retry_strategy = Retry(
+        total=max_retries,
+        status_forcelist=[429, 500, 502, 503, 504],
+        method_whitelist=["HEAD", "GET", "OPTIONS"]
+    )
+    # configure HTTPAdapter
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    # configure requests session
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    # make request
+    log.debug(f'Making request to {url}')
+    response = session.get(url, headers=headers, timeout=timeout)
+    # check response
+    if response.status_code != 200:
+        raise ValueError(f'Invalid response code: {response.status_code}')
+    # parse response
+    data = response.json()
+    session.close()
+    return data
+    
+
+# ------------------- #
+# Data handling
 
 # Write raw data to the raw/ directory for our flight
 def write_raw_data(flight_dir: str, data: dict, data_format: str) -> None:
@@ -164,20 +194,27 @@ def write_raw_data(flight_dir: str, data: dict, data_format: str) -> None:
     else:
         raise ValueError(f'Invalid data format: {data_format}')
 
-def rebuild_from_raw(flight_dir: str, data_format: str) -> None:
-    """ Build the database from stored raw data
-    Arguments:
-        flight_dir: Path to the flight directory
-        data_format: Format to write data in
-    """
-    logging.debug(f'Rebuilding database from raw data in {flight_dir}/raw/')
-    for file in os.listdir(os.path.join(flight_dir, 'raw')):
-        with open(os.path.join(flight_dir, 'raw', file), 'r') as f:
-            data = json.load(f)
-            print("Not yet implemented")
-            # TODO parse data and insert into db
+# ------------------- #
+# DB Functions
 
-def initialize_db(db: sqlite3.Connection) -> None:
+def create_db(flight_dir: str, flight_name: str) -> sqlite3.Connection:
+    """ Initialize database for storing flight data
+    Arguments:
+        data_dir: Top-level directory to store flight data in
+        flight_name: Name of your flight
+    Returns:
+        db: sqlite3 connection object
+    """
+    # Check if db already exists
+    if os.path.isfile(f'{data_dir}/flight-data_{flight_name}.db'):
+        log.info(f'Flight data database already exists, path: {data_dir}/flight-data_{flight_name}.db')
+        log.info('Attempting to resume scraping')
+    else:
+        log.info(f'Flight data database does not exist, creating new database at {data_dir}/flight-data_{flight_name}.db')
+    db = sqlite3.connect(f'{data_dir}/flight-data_{flight_name}.db')
+    return db
+
+def initialize_db(db: sqlite3.Connection, rebuild: bool) -> None:
     """ Initialize the database
     Arguments:
         db: sqlite3 connection object
@@ -194,13 +231,8 @@ def write_to_db(db: sqlite3.Connection, data: dict) -> None:
     logging.debug("Database not yet implemented")
     # TODO insert data into db
 
-def print_welcome() -> None:
-    """ Print welcome message """
-    print(f"Welcome to InFlightTracker version {VERSION}")
-    print("This script will continuously scrape flight data from the in-flight API and store it in a database")
-    # TODO print more info and ascii art
-
 # ------------------- #
+# Main loop
 
 def main() -> None:
     """ MAIN """
@@ -221,7 +253,6 @@ def main() -> None:
     print(f"Press Ctrl+C to exit")
     try:
         while True:
-            
             schedule.run_pending()
             time.sleep(1)
     # Clean up if we get a keyboard interrupt
