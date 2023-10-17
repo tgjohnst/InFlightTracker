@@ -15,6 +15,14 @@ This project attempts to query standard GoGo inflight wifi endpoints and display
 
 ## Usage
 ```
+usage: scrapeFlightData.py [-h] --flight-name FLIGHT_NAME [--data-dir DATA_DIR] [--store-raw]
+                           [--data-format {json,csv}] [--scrape-interval SCRAPE_INTERVAL]
+                           [--scrape-timeout SCRAPE_TIMEOUT] [--scrape-max-retries SCRAPE_MAX_RETRIES] [--rebuild-db]
+                           [--logfile-dir LOGFILE_DIR] [--verbose] [--debug]
+```
+Example:
+```
+scrapeFlightData.py --flight-name DL123_SEA_BOS
 ```
 
 ## Contributing

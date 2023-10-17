@@ -1,9 +1,11 @@
 ## Script that continuously scrapes flight data from the in-flight API and stores it in a database
 
 import os
+import sys
 import json
 import csv
 import logging
+import time
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -41,7 +43,7 @@ def parse_cmd(args: list):
     parser.add_argument('--rebuild-db', '-b', action='store_true', help='Rebuild the database from stored raw data (will delete existing data)')
 
     # Interaction
-    parser.add_argument('--logfile-dir', '-l', default='.', type=str, help='Log file output path (Default is current directory)')
+    parser.add_argument('--logfile-dir', '-l', default='logs/', type=str, help='Log file output path (Default is current directory)')
     parser.add_argument('--verbose','-v', action='store_true', help='Output log events to stout/stderr as well as the log file')
     parser.add_argument('--debug', action='store_true', help='Enable more detailed logging for debug purposes (will blow up log file size, use for testing only)')
     optS = parser.parse_args(args)
@@ -76,6 +78,7 @@ def init_log(logfile_dir: str = '.', debug: bool = False, verbose: bool = False)
         debug: Enable debug logging
         verbose: Enable verbose logging (to stdout/stderr)
     """
+    os.makedirs(logfile_dir, exist_ok=True)
     filedate = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
@@ -115,7 +118,7 @@ def determine_flight_dir(data_dir: str, flight_name: str) -> str:
         flight_dir: Path to the flight directory
     """
     flight_dir = os.path.join(data_dir, flight_name)
-    log.info(f'Flight directory: {flight_dir}')
+    logging.info(f'Flight directory: {flight_dir}')
     return flight_dir
 
 # Create the flight directory if it doesn't exist
@@ -129,11 +132,11 @@ def create_flight_dir(data_dir: str, flight_name: str, store_raw: bool) -> str:
     """
     flight_dir = determine_flight_dir(data_dir, flight_name)
     if not os.path.isdir(flight_dir):
-        log.debug(f'Flight directory does not exist, creating new directory at {flight_dir}')
-        os.mkdir(flight_dir)
+        logging.debug(f'Flight directory does not exist, creating new directory at {flight_dir}')
+        os.makedirs(flight_dir, exist_ok=True)
     if store_raw:
-        log.debug(f'Raw data storage enabled, creating raw/ directory at {flight_dir}')
-        os.mkdir(os.path.join(flight_dir, 'raw'), exist_ok=True)
+        logging.debug(f'Raw data storage enabled, creating raw/ directory at {flight_dir}')
+        os.makedirs(os.path.join(flight_dir, 'raw'), exist_ok=True)
     return flight_dir
 
 # ------------------- #
@@ -153,7 +156,8 @@ def fetch_data(url: str, headers: dict, timeout: int, max_retries: int) -> dict:
     retry_strategy = Retry(
         total=max_retries,
         status_forcelist=[429, 500, 502, 503, 504],
-        method_whitelist=["HEAD", "GET", "OPTIONS"]
+        #method_whitelist=["HEAD", "GET", "OPTIONS"]
+        allowed_methods=["HEAD", "GET", "OPTIONS"]
     )
     # configure HTTPAdapter
     adapter = HTTPAdapter(max_retries=retry_strategy)
@@ -162,12 +166,16 @@ def fetch_data(url: str, headers: dict, timeout: int, max_retries: int) -> dict:
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     # make request
-    log.debug(f'Making request to {url}')
-    response = session.get(url, headers=headers, timeout=timeout)
+    logging.debug(f'Making request to {url}')
+    try:
+        response = session.get(url, headers=headers, timeout=timeout)
+    except:
+        logging.error('Error fetching data from API. Trying again in 30 seconds.')
+        return None
     # check response
     if response.status_code != 200:
-        raise ValueError(f'Invalid response code: {response.status_code}')
-    #TODO implement ignoring failures (would skip writing out data)
+        logging.error(f'Invalid response code: {response.status_code}')
+        return None
     # parse response
     data = response.json()
     session.close()
@@ -184,11 +192,12 @@ def fetch_and_store_data(flight_dir: str, store_raw: bool, data_format: str, db:
     """
     # Fetch data
     data = fetch_data(API_URL, API_HEADERS, timeout, max_retries)
-    # Store raw data
-    if store_raw:
-        write_raw_data(flight_dir, data, data_format)
-    # Store processed data in db
-    write_to_db(db, data)
+    if data: # handle case where API connection fails
+        # Store raw data
+        if store_raw:
+            write_raw_data(flight_dir, data, data_format)
+        # Store processed data in db
+        write_to_db(db, data)
 
 # ------------------- #
 # Data handling
@@ -214,8 +223,8 @@ def write_raw_data(flight_dir: str, data: dict, data_format: str) -> None:
 # ------------------- #
 # DB Functions
 
-def create_db(flight_dir: str, flight_name: str) -> sqlite3.Connection:
-    """ Initialize database for storing flight data
+def create_db(data_dir: str, flight_name: str, rebuild_db: bool = False) -> sqlite3.Connection:
+    """ Create database for storing flight data
     Arguments:
         data_dir: Top-level directory to store flight data in
         flight_name: Name of your flight
@@ -223,12 +232,16 @@ def create_db(flight_dir: str, flight_name: str) -> sqlite3.Connection:
         db: sqlite3 connection object
     """
     # Check if db already exists
+    create = False
     if os.path.isfile(f'{data_dir}/flight-data_{flight_name}.db'):
-        log.info(f'Flight data database already exists, path: {data_dir}/flight-data_{flight_name}.db')
-        log.info('Attempting to resume scraping')
+        logging.info(f'Flight data database already exists, path: {data_dir}/flight-data_{flight_name}.db')
+        logging.info('Attempting to resume scraping')
     else:
-        log.info(f'Flight data database does not exist, creating new database at {data_dir}/flight-data_{flight_name}.db')
+        logging.info(f'Flight data database does not exist, creating new database at {data_dir}/flight-data_{flight_name}.db')
+        create = True
     db = sqlite3.connect(f'{data_dir}/flight-data_{flight_name}.db')
+    if create:
+        initialize_db(db, rebuild=rebuild_db)
     return db
 
 def initialize_db(db: sqlite3.Connection, rebuild: bool) -> None:
@@ -255,17 +268,17 @@ def main() -> None:
     """ MAIN """
     # Parse command line arguments and init logging
     args = parse_cmd(sys.argv[1:])
-    validate_args()
+    validate_args(args)
     init_log(args.logfile_dir, debug=args.debug, verbose=args.verbose)
     log_args(args)
 
     # Initialize storage
-    log.info(f'Initializing storage and database connection...')
-    flight_dir = create_flight_dir(args.data_dir, args.flight_name)
-    db = init_db(args.data_dir, args.flight_name)
+    logging.info(f'Initializing storage and database connection...')
+    flight_dir = create_flight_dir(args.data_dir, args.flight_name, args.store_raw)
+    db = create_db(flight_dir, args.flight_name, rebuild_db=args.rebuild_db)
 
     # Main fetch loop
-    log.info(f'Starting main fetch loop...')
+    logging.info(f'Starting main fetch loop...')
     print(f"Requesting new data every {args.scrape_interval} seconds...")
     print(f"Press Ctrl+C to exit")
 
@@ -284,7 +297,7 @@ def main() -> None:
             time.sleep(1)
     # Clean up if we get a keyboard interrupt
     except KeyboardInterrupt:
-        log.info('Keyboard interrupt detected, exiting...')
+        logging.info('Keyboard interrupt detected, exiting...')
         db.close()
         sys.exit(0)
 
