@@ -207,6 +207,7 @@ def fetch_and_store_data(flight_dir: str, api_url: str, store_raw: bool, data_fo
         max_retries: Maximum number of retries for API requests
     """
     # Fetch data
+    logging.debug('Fetching data from API...')
     data = fetch_data(api_url, API_HEADERS, timeout, max_retries)
     if data: # handle case where API connection fails
         # Store raw data
