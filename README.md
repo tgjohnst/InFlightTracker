@@ -3,14 +3,17 @@ Track your flight while connected to inflight wifi!
 
 This project attempts to query standard GoGo inflight wifi endpoints and display the data prettily without having to use the GoGo app/dashboard. This is useful for those who want to track their flight without having to go through ad-ridden webpages and/or download the GoGo app.
 
+This can also support the delta inflight wifi API. 
+
 ## Installation
 
 ```
 ```
 
 ### Requirements
-
+See `requirements.txt`
 ```
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -37,6 +40,7 @@ Currently in development, nothing is working/tested yet. This is a side project 
 
 ## TODO
 - [ ] Create a simple python script that can query the GoGo endpoints and store the data in a consistent way
+- [ ] Add support for delta wifi
 - [ ] Create a simple python script that can parse the data and display it in a pretty way on the CLI
 - [ ] Figure out how longitudinal flight data should be stored (json? sqlite?)
 - [ ] Package the python scripts into a pip package

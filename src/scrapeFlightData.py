@@ -16,7 +16,6 @@ from datetime import datetime
 from argparse import ArgumentParser
 
 # API Constants
-API_URL = "https://wifi.inflightinternet.com/abp/v2/statusTray?fig2=true"
 API_HEADERS = {
     "accept": "application/json, text/plain, */*",
     "accept-language": "en-US,en;q=0.5"
@@ -30,6 +29,7 @@ def parse_cmd(args: list):
     parser = ArgumentParser(description=__doc__)
     # Basic Configuration
     parser.add_argument('--flight-name', '-n', type=str, required=True, help='Name of your flight, which allows for resuming scraping')
+    parser.add_argument('--api-url', '-a', type=str, default="https://wifi.inflightinternet.com/abp/v2/statusTray?fig2=true", help='URL of the in-flight API (default: https://wifi.inflightinternet.com/abp/v2/statusTray?fig2=true)')
     parser.add_argument('--data-dir', '-d', type=str, default="flight_data/", help='General directory to store flight data in (default: ./flight_data)')
     parser.add_argument('--store-raw', '-s', action='store_true', help='Store raw data from API in addition to processed data')
     parser.add_argument('--data-format', '-f', type=str, default="json", choices=["json", "csv"], help='Format to store raw flight data in. (default: json). JSON is recommended for now')
@@ -108,6 +108,8 @@ def print_welcome_message() -> None:
     print("This script will continuously scrape flight data from the in-flight API and store it in a database")
     # TODO print more info and ascii art
 
+# ------------------- #
+# File handling
 
 def determine_flight_dir(data_dir: str, flight_name: str) -> str:
     """ Returns the path to the flight directory
@@ -141,6 +143,20 @@ def create_flight_dir(data_dir: str, flight_name: str, store_raw: bool) -> str:
 
 # ------------------- #
 # Fetching
+
+def check_url(url: str) -> None:
+    """ Check if the API URL is valid
+    Arguments:
+        url: URL to check
+    """
+    logging.debug(f'Checking URL: {url}')
+    try:
+        response = requests.head(url)
+    except:
+        raise ValueError(f'Invalid API URL: {url}')
+    if response.status_code != 200:
+        raise ValueError(f'Invalid API URL: {url}')
+# TODO do we want this to actually raise an error if the URL doesn't return? Or just warn and continue gracefully
 
 def fetch_data(url: str, headers: dict, timeout: int, max_retries: int) -> dict:
     """ Fetch data from the API
@@ -271,6 +287,11 @@ def main() -> None:
     validate_args(args)
     init_log(args.logfile_dir, debug=args.debug, verbose=args.verbose)
     log_args(args)
+
+    # Store and check API URL
+    api_url = args.api_url
+    logging.info(f'API URL: {api_url}')
+    check_url(api_url)
 
     # Initialize storage
     logging.info(f'Initializing storage and database connection...')
