@@ -197,7 +197,7 @@ def fetch_data(url: str, headers: dict, timeout: int, max_retries: int) -> dict:
     session.close()
     return data
     
-def fetch_and_store_data(flight_dir: str, store_raw: bool, data_format: str, db: sqlite3.Connection, timeout: int, max_retries: int) -> None:
+def fetch_and_store_data(flight_dir: str, api_url: str, store_raw: bool, data_format: str, db: sqlite3.Connection, timeout: int, max_retries: int) -> None:
     """ Fetch data from the API and store it
     Arguments:
         flight_dir: Path to the flight directory
@@ -207,7 +207,7 @@ def fetch_and_store_data(flight_dir: str, store_raw: bool, data_format: str, db:
         max_retries: Maximum number of retries for API requests
     """
     # Fetch data
-    data = fetch_data(API_URL, API_HEADERS, timeout, max_retries)
+    data = fetch_data(api_url, API_HEADERS, timeout, max_retries)
     if data: # handle case where API connection fails
         # Store raw data
         if store_raw:
@@ -307,6 +307,7 @@ def main() -> None:
     schedule.every(args.scrape_interval).seconds.do(
         fetch_and_store_data,
         flight_dir=flight_dir,
+        api_url=api_url,
         store_raw=args.store_raw,
         data_format=args.data_format,
         db=db,
