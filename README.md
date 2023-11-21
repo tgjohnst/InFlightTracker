@@ -33,6 +33,7 @@ scrapeFlightData.py --flight-name DL123_SEA_BOS
 | -------- | --- |
 | GoGo     | https://wifi.inflightinternet.com/abp/v2/statusTray?fig2=true |
 | Delta    | https://wifi.delta.com/api/flight-data     |
+| United   | https://www.unitedwifi.com/portal/r/getAllSessionData    |
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
